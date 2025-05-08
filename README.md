@@ -24,6 +24,9 @@ adminchatid = [51527XXX]
 ```
 
 # 3 dùng /help để biết thêm thông tin
+
+chạy `python servstatsbot_fully_fixed.py`
+
 ![image](https://github.com/user-attachments/assets/cce8b599-a031-4024-acc7-e745ba7dfbc0)
 ![image](https://github.com/user-attachments/assets/d349ff49-fac0-4d50-9a9b-2d9931715cb8)
 
