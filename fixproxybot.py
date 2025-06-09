@@ -1,4 +1,4 @@
-from tokens import *  # telegrambot, adminchatid
+from tokens import *
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -10,9 +10,9 @@ import requests
 
 # --- Configuration ---
 memorythreshold = 85
+cpu_threshold = 50
 poll = 300
-# --- thay link proxy clooudflare vao day
-proxy_base_url = f"https://xxx-proxy-telegram.xxxx.workers.dev/bot{telegrambot}"
+proxy_base_url = f"https://xxx-proxy-telegram.xxx.workers.dev/bot{telegrambot}"
 
 # --- State ---
 shellexecution = []
@@ -30,8 +30,8 @@ help_message = """
 *Server Stats Bot Commands*
 /help - Show this help message
 /stats - Display server statistics (CPU, memory, disk usage)
-/memgraph - Show memory usage graph (last 10s)
-/cpugraph - Show CPU usage graph (last 10s)
+/memgraph - Show memory usage graph
+/cpugraph - Show CPU usage graph
 /shell - Execute shell commands
 /setmem - Set memory threshold for alerts
 /setpoll - Set polling interval
@@ -43,7 +43,11 @@ Current polling interval: {} seconds
 # --- Telegram Communication ---
 def send_telegram_message(chat_id, message, parse_mode="Markdown"):
     url = f"{proxy_base_url}/sendMessage"
-    data = {"chat_id": chat_id, "text": message, "parse_mode": parse_mode}
+    data = {
+        "chat_id": chat_id,
+        "text": message,
+        "parse_mode": parse_mode,
+    }
     requests.post(url, data=data)
 
 def send_telegram_photo(chat_id, photo_file):
@@ -66,35 +70,32 @@ def get_updates(offset=None):
 
 # --- Graph Functions ---
 def plotmemgraph(memlist, xaxis, tmperiod):
-    plt.figure(figsize=(8, 4))
+    plt.figure()
     plt.xlabel(tmperiod)
     plt.ylabel('% Used')
-    plt.title('Memory Usage (Last 10 seconds)')
+    plt.title('Memory Usage Graph')
     plt.plot(xaxis, memlist, 'b-', label='Memory Usage')
-    plt.axhline(y=memorythreshold, color='r', linestyle='--', label='Threshold')
-    plt.ylim(0, 100)
-    plt.grid(True, linestyle='--', alpha=0.6)
+    plt.plot(xaxis, [memorythreshold]*len(xaxis), 'r--', label='Threshold')
     plt.legend()
-    plt.tight_layout()
+    plt.axis([0, len(xaxis)-1, 0, 100])
     plt.savefig('graph.png')
     plt.close()
     return open('graph.png', 'rb')
 
 def plotcpugraph(cpulist, xaxis, tmperiod):
-    plt.figure(figsize=(8, 4))
+    plt.figure()
     plt.xlabel(tmperiod)
     plt.ylabel('% Used')
-    plt.title('CPU Usage (Last 10 seconds)')
+    plt.title('CPU Usage Graph')
     plt.plot(xaxis, cpulist, 'g-', label='CPU Usage')
-    plt.ylim(0, 100)
-    plt.grid(True, linestyle='--', alpha=0.6)
+    plt.plot(xaxis, [cpu_threshold]*len(xaxis), 'r--', label='Threshold')
     plt.legend()
-    plt.tight_layout()
+    plt.axis([0, len(xaxis)-1, 0, 100])
     plt.savefig('cpugraph.png')
     plt.close()
     return open('cpugraph.png', 'rb')
 
-# --- Core ---
+# --- Helpers ---
 def clearall(chat_id):
     for lst in (shellexecution, settingmemth, setpolling):
         if chat_id in lst:
@@ -104,12 +105,14 @@ def send_long_message(chat_id, text, max_length=4000):
     for i in range(0, len(text), max_length):
         send_telegram_message(chat_id, text[i:i+max_length])
 
+# --- Command Handler ---
 def handle_command(chat_id, text):
     global memorythreshold, poll
 
     if text == '/stats' and chat_id not in shellexecution:
         send_chat_action(chat_id)
         memory = psutil.virtual_memory()
+        cpu = psutil.cpu_percent(interval=1)
         disk = psutil.disk_usage('/')
         boottime = datetime.fromtimestamp(psutil.boot_time())
         now = datetime.now()
@@ -119,19 +122,9 @@ def handle_command(chat_id, text):
             f"Total memory: {memory.total / 1e9:.2f} GB\n"
             f"Available memory: {memory.available / 1e9:.2f} GB\n"
             f"Used memory: {memory.percent}%\n"
-            f"Disk used: {disk.percent}%\n\n"
+            f"CPU usage: {cpu:.2f}%\n"
+            f"Disk used: {disk.percent}%\n"
         )
-        procs = {}
-        for pid in psutil.pids():
-            try:
-                p = psutil.Process(pid)
-                pmem = p.memory_percent()
-                if pmem > 0.5:
-                    procs[p.name()] = procs.get(p.name(), 0) + pmem
-            except:
-                continue
-        for name, percent in sorted(procs.items(), key=lambda x: x[1], reverse=True):
-            reply += f"{name} {percent:.2f}%\n"
         send_long_message(chat_id, reply)
 
     elif text == '/setpoll' and chat_id not in setpolling:
@@ -174,20 +167,19 @@ def handle_command(chat_id, text):
         try:
             p = Popen(text, shell=True, stdout=PIPE, stderr=STDOUT)
             output = p.stdout.read().decode()
-            if output:
-                send_long_message(chat_id, output)
-            else:
-                send_telegram_message(chat_id, "No output.")
+            send_long_message(chat_id, output if output else "No output.")
         except Exception as e:
             send_telegram_message(chat_id, f"Error: {e}")
 
     elif text == '/memgraph':
         send_chat_action(chat_id)
-        send_telegram_photo(chat_id, plotmemgraph(memlist, xaxis, "Time (s)"))
+        tmperiod = "Last 10 seconds"
+        send_telegram_photo(chat_id, plotmemgraph(memlist, xaxis, tmperiod))
 
     elif text == '/cpugraph':
         send_chat_action(chat_id)
-        send_telegram_photo(chat_id, plotcpugraph(cpulist, xaxis, "Time (s)"))
+        tmperiod = "Last 10 seconds"
+        send_telegram_photo(chat_id, plotcpugraph(cpulist, xaxis, tmperiod))
 
     elif text == '/help' or text == '/start':
         msg = help_message.format(memorythreshold, poll)
@@ -213,7 +205,6 @@ while True:
         if chat_id in adminchatid and text:
             handle_command(chat_id, text)
 
-    # Poll every second to get recent 10 seconds data
     mem = psutil.virtual_memory()
     cpu = psutil.cpu_percent(interval=1)
 
@@ -231,8 +222,12 @@ while True:
         tr = 0
         if mem.percent > memorythreshold:
             for adminid in adminchatid:
-                send_telegram_message(adminid, f"⚠️ CRITICAL MEMORY: {mem.available / 1e9:.2f} GB available")
+                send_telegram_message(adminid, f"\u26a0\ufe0f CRITICAL MEMORY: {mem.available / 1e9:.2f} GB available")
                 send_telegram_photo(adminid, plotmemgraph(memlist, xaxis, "Last 10 seconds"))
+
+    if cpu > cpu_threshold:
+        for adminid in adminchatid:
+            send_telegram_message(adminid, f"\u26a0\ufe0f HIGH CPU USAGE: {cpu:.2f}%")
 
     time.sleep(1)
     tr += 1
