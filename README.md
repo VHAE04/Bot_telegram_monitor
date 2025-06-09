@@ -32,3 +32,5 @@ chạy `python servstatsbot_fully_fixed.py`
 
 
 bản này được tinh chỉnh từ geekbeard/ServerStatsBot
+
+update 9/6/2025 nếu bạn bị chặn tele hãy dùng bản fixproxybot.py và thay proxy của cloudflare của bạn vào tương ứng hướng dẫn https://github.com/tuanpb99/cf-worker-telegram sau khi tạo hãy thay link vào và chạy fixproxybot.py
